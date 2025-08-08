@@ -1,4 +1,4 @@
-import { getDecryptedCookie } from './getCookies.j';
+import { getDecryptedCookie } from './getCookies.js';
 export async function parseAuthenticationCookie(encryptedCookie) {
 	const decryptedCookie = await getDecryptedCookie(encryptedCookie);
 	const ready = decryptedCookie.split(';');

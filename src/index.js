@@ -1,23 +1,23 @@
-import WorkerEntrypoint from 'cloudflare:workers';
-import { handleAuthenticationInitialization } from './handlers/handleAuthenticationInitialization.js';
-import { handleAuthenticationCallback } from './handlers/handleAuthenticationCallback.js';
-import { handleSignUpInitialization } from './handlers/handleSignUpInitialization.js';
-import { handleSignUpCallback } from './handlers/handleSignUpCallback.js';
+import { WorkerEntrypoint } from 'cloudflare:workers';
+import { handleSignInInitialization } from './modules/handleSignInInitialization.js';
+import { handleSignInCallback } from './modules/handleSignInCallback.js';
+import { handleSignUpInitialization } from './modules/handleSignUpInitialization.js';
+import { handleSignUpCallback } from './modules/handleSignUpCallback.js';
 
 export class VorteAuthenticationService extends WorkerEntrypoint {
-	async authenticationInitialization() {
-		return await handleAuthenticationInitialization();
+	async signInInitialization(lang, cookies, segments) {
+		return await handleSignInInitialization(this.env, this.ctx, lang, cookies, segments);
 	}
-	async authenticationCallback() {
-		return await handleAuthenticationCallback();
-	}
-
-	async signUpInitialization() {
-		return await handleSignUpInitialization();
+	async signInCallback(lang, cookies, segments, code) {
+		return await handleSignInCallback(this.env, this.ctx, lang, cookies, segments, code);
 	}
 
-	async signUpCallback() {
-		return await handleSignUpCallback();
+	async signUpInitialization(lang, cookies, segments) {
+		return await handleSignUpInitialization(this.env, this.ctx, lang, cookies, segments);
+	}
+
+	async signUpCallback(lang, cookies, segments) {
+		return await handleSignUpCallback(this.env, this.ctx, lang, cookies, segments);
 	}
 }
 

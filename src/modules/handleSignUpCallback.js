@@ -1,9 +1,12 @@
-export async function handleSignUpCallback() {
+import { getEncryptedCookie } from './utilities/getCookies';
+import { parseAuthenticationCookie } from './utilities/parseAuthenticationCookie.js';
+
+export async function handleSignUpCallback(request, env, ctx, lang, cookies) {
 	try {
 		const [userInput, verifier, decryptedCookie] = await Promise.all([
 			request.json(),
 			env.AUTHN_VERIFIER.get(),
-			parseAuthnCookie(cookies.AUTHN_VERIFIER),
+			parseAuthenticationCookie(cookies.AUTHN_VERIFIER),
 		]);
 
 		if (

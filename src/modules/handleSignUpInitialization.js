@@ -1,4 +1,7 @@
-export async function handleSignUpInitialization() {
+import { sendEmail } from './utilities/mail-client.js';
+import { getEncryptedCookie } from './utilities/getCookies.js';
+
+export async function handleSignUpInitialization(request, env, ctx, lang, cookies) {
 	try {
 		const [form, verifier, code, turnstileSecret] = await Promise.all([
 			request.json(),

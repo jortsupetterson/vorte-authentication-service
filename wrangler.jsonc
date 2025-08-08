@@ -1,18 +1,85 @@
-/**
- * For more details on how to configure Wrangler, refer to:
- * https://developers.cloudflare.com/workers/wrangler/configuration/
- */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"account_id": "e8ef5da3c57b544081f2e4181d6cecc9",
-	"name": "vorte-authentication-service",
+	"name": "authentication-service-v0",
 	"main": "src/index.js",
-	"compatibility_date": "2025-07-31",
+	"compatibility_date": "2025-08-05",
 	"observability": {
 		"enabled": true
 	},
 
 	"placement": { "mode": "smart" },
 
-	"minify": true
+	"minify": false,
+
+	"vars": {
+		"SOCIAL_AUTHN_REDIRECT_URI": "https://localhost:8787/services/authn/sign_in/callback/social"
+	},
+
+	"secrets_store_secrets": [
+		{
+			"binding": "VORTE_SERVER_SECRET",
+			"secret_name": "vorte-server-secret",
+			"store_id": "44ad49dd09074b15a7db7007f7de65f6"
+		},
+		{
+			"binding": "ALIAS_SECRET",
+			"secret_name": "static-alias-secret",
+			"store_id": "44ad49dd09074b15a7db7007f7de65f6"
+		},
+		{
+			"binding": "GOOGLE_CLIENT_SECRET",
+			"secret_name": "google-client-secret",
+			"store_id": "44ad49dd09074b15a7db7007f7de65f6"
+		},
+		{
+			"binding": "GOOGLE_CLIENT_ID",
+			"secret_name": "google-client-id",
+			"store_id": "44ad49dd09074b15a7db7007f7de65f6"
+		},
+		{
+			"binding": "AZURE_CLIENT_SECRET",
+			"secret_name": "azure-client-secret",
+			"store_id": "44ad49dd09074b15a7db7007f7de65f6"
+		},
+		{
+			"binding": "AZURE_CLIENT_ID",
+			"secret_name": "azure-client-id",
+			"store_id": "44ad49dd09074b15a7db7007f7de65f6"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "AUTHN_SESSIONS_KV",
+			"id": "836b6cfcf484442d855413d6480d5092",
+			"preview_id": "df4fbf6456aa41c7b39b27412968f134"
+		},
+		{
+			"binding": "USER_IDENTIFIERS_KV",
+			"id": "16b7f10d0c794ddcb0793305f80107df",
+			"preview_id": "3c74d70e263b4de9a7c97399266a66f3"
+		},
+		{
+			"binding": "CRYPTO_SALT_KV",
+			"id": "a18e89285f8946c89a1ff9764fef53c0",
+			"preview_id": "1bbd385e0fbd46e19d9b0191fbae953b"
+		}
+	],
+	"services": [
+		{
+			"binding": "MAIL_SERVICE",
+			"service": "mail-service-v0",
+			"entrypoint": "VorteMailService"
+		},
+		{
+			"binding": "DATA_SERVICE",
+			"service": "data-service-v0",
+			"entrypoint": "VorteDataService"
+		},
+		{
+			"binding": "CRYPTO_SERVICE",
+			"service": "crypto-service-v0",
+			"entrypoint": "VorteCryptoService"
+		}
+	]
 }
