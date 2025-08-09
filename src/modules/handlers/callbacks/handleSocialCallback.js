@@ -8,7 +8,7 @@ const CLIENT_SECRETS = {
 	microsoft: async (env) => await env.AZURE_CLIENT_SECRET.get(),
 };
 
-export async function handleSocialCallback(env, ctx, lang, cookies, segments, code) {
+export async function handleSocialCallback(env, ctx, lang, cookies, segments, code, stateFromQuery) {
 	const [redirectUri, decryptedCookie, vorte_server_secret] = await Promise.all([
 		env.SOCIAL_AUTHN_REDIRECT_URI,
 		env.CRYPTO_SERVICE.decryptPayload(cookies.AUTHN_CHALLENGE),
@@ -26,11 +26,23 @@ export async function handleSocialCallback(env, ctx, lang, cookies, segments, co
 	// `${method};${provider};${subject};${state};${PKCE.verifier};${date};${vorte_server_secret}`
 	const parts = decryptedCookie.plainText.split(';');
 	const provider = parts[1];
-	const state = parts[3];
+	const cookieState = parts[3];
 	const verifier = parts[4];
 	const ts = Number(parts[5]);
 
-	const validPkce = await env.CRYPTO_SERVICE.verifyProofKeyForCodeExchange(await env.AUTHN_SESSION_KV.get(state), verifier);
+	if (!stateFromQuery || stateFromQuery !== cookieState) {
+		ctx.waitUntil(env.CRYPTO_SALT_KV.delete(decryptedCookie.saltId));
+		return {
+			status: 400,
+			headers: { 'Set-Cookie': 'AUTHN_CHALLENGE=;HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0;' },
+			body: `State From Query !state from cookie,${cookieState}, ${stateFromQuery}, Decrypted cookie plain text: ${
+				decryptedCookie.plainText
+			}, Entire cookie obj: ${JSON.stringify(cookies)}`,
+		};
+	}
+
+	const kvChallenge = await env.AUTHN_SESSIONS_KV.get(stateFromQuery);
+	const validPkce = kvChallenge ? await env.CRYPTO_SERVICE.verifyProofKeyForCodeExchange(kvChallenge, verifier) : false;
 	const notExpired = Date.now() - ts <= 300_000;
 	const serverOk = parts[6] === vorte_server_secret;
 
@@ -39,7 +51,7 @@ export async function handleSocialCallback(env, ctx, lang, cookies, segments, co
 		return {
 			status: 400,
 			headers: { 'Set-Cookie': 'AUTHN_CHALLENGE=;HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0;' },
-			body: null,
+			body: 'Request is invalid',
 		};
 	}
 
@@ -47,7 +59,11 @@ export async function handleSocialCallback(env, ctx, lang, cookies, segments, co
 	const getSecret = CLIENT_SECRETS[provider];
 	if (typeof getId !== 'function' || typeof getSecret !== 'function') {
 		ctx.waitUntil(env.CRYPTO_SALT_KV.delete(decryptedCookie.saltId));
-		return { status: 400, body: 'Unsupported provider' };
+		return {
+			status: 400,
+			headers: { 'Set-Cookie': 'AUTHN_CHALLENGE=;HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0;' },
+			body: 'Unsupported provider',
+		};
 	}
 
 	const client_id = await getId(env);
