@@ -36,7 +36,7 @@ export async function handleSocialInit(env, ctx, lang, cookies, segments) {
 			}?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=openid+email+profile&code_challenge=${
 				PKCE.challenge
 			}&code_challenge_method=S256&state=${state}`,
-			'Set-Cookie': `AUTHN_VERIFIER=${encryptedCookie};HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=300;`,
+			'Set-Cookie': `AUTHN_VERIFIER=${encryptedCookie}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=300;`,
 		},
 		body: null,
 	};

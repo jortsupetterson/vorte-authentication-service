@@ -26,14 +26,6 @@ export async function handleSocialCallback(env, ctx, lang, cookies, segments, co
 		env.VORTE_SERVER_SECRET.get(),
 	]);
 
-	if (!decryptedCookie?.plainText) {
-		return {
-			status: 400,
-			headers: { 'Set-Cookie': 'AUTHN_VERIFIER=;HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0;' },
-			body: null,
-		};
-	}
-
 	// `${method};${provider};${subject};${state};${PKCE.verifier};${date};${vorte_server_secret}`
 	const parts = decryptedCookie.plainText.split(';');
 	const provider = parts[1];

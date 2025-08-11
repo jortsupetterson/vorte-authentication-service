@@ -12,12 +12,12 @@ export class VorteAuthenticationService extends WorkerEntrypoint {
 		return await handleSignInCallback(this.env, this.ctx, lang, cookies, segments, code, state);
 	}
 
-	async signUpInitialization(lang, cookies, segments) {
-		return await handleSignUpInitialization(this.env, this.ctx, lang, cookies, segments);
+	async signUpInitialization(lang, form) {
+		return await handleSignUpInitialization(this.env, this.ctx, lang, form);
 	}
 
-	async signUpCallback(lang, cookies, segments) {
-		return await handleSignUpCallback(this.env, this.ctx, lang, cookies, segments);
+	async signUpCallback(lang, cookies, form) {
+		return await handleSignUpCallback(this.env, this.ctx, lang, cookies, form);
 	}
 }
 

@@ -1,44 +1,53 @@
-import { getEncryptedCookie } from './utilities/getCookies';
-import { parseAuthenticationCookie } from './utilities/parseAuthenticationCookie.js';
-
-export async function handleSignUpCallback(request, env, ctx, lang, cookies) {
+export async function handleSignUpCallback(env, ctx, lang, cookies, form) {
 	try {
-		const [userInput, verifier, decryptedCookie] = await Promise.all([
-			request.json(),
-			env.AUTHN_VERIFIER.get(),
-			parseAuthenticationCookie(cookies.AUTHN_VERIFIER),
+		const [decryptedCookie, vorte_server_secret] = await Promise.all([
+			env.CRYPTO_SERVICE.decryptPayload(cookies.AUTHN_VERIFIER),
+			env.VORTE_SERVER_SECRET.get(),
 		]);
 
-		if (
-			(await env.AUTHN_SESSIONS_KV.get(decryptedCookie[4])) === decryptedCookie[1] &&
-			Date.now() - Number(decryptedCookie[3]) < 300_000 &&
-			decryptedCookie[2] === verifier &&
-			decryptedCookie[1] === userInput.code
-		) {
-			const operation = await env.DATA_SERVICE.createDb(userInput.form, cookies, lang);
-			const data = await JSON.parse(operation);
-			const [kvRes, authzCookie, headers] = await Promise.all([
-				env.AUTHN_SESSIONS_KV.delete(decryptedCookie[4]),
-				getEncryptedCookie('AUTHORIZATION', data.result, env, 86400),
-				new Headers(),
-			]);
-			headers.append('Set-Cookie', 'AUTHN_VERIFIER=""; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0;');
-			headers.append('Set-Cookie', authzCookie);
-			return new Response(null, {
-				status: data.status,
-				headers: headers,
+		// `${method};${provider};${subject};${state};${PKCE.verifier};${date};${vorte_server_secret}`
+		const parts = decryptedCookie.plainText.split(';');
+		const cookieState = parts[3];
+		const pkceVerifier = parts[4];
+		const ts = Number(parts[5]);
+
+		const kvRaw = await env.AUTHN_SESSIONS_KV.get(cookieState);
+		const kvSplit = kvRaw.split(';');
+		const pkceChallenge = kvSplit[0];
+
+		const notExpired = Date.now() - ts <= 300_000;
+		const serverOk = parts[6] === vorte_server_secret;
+		const validPkce = await env.CRYPTO_SERVICE.verifyProofKeyForCodeExchange(pkceChallenge, pkceVerifier);
+		const validCode = form.code === kvSplit[1];
+
+		if (!notExpired || !serverOk || !validPkce || !validCode) {
+			ctx.waitUntil(async () => {
+				env.CRYPTO_SALT_KV.delete(decryptedCookie.saltId);
+				env.AUTHN_SESSIONS_KV.delete(cookieState);
 			});
+			return {
+				status: 400,
+				headers: { 'Set-Cookie': 'AUTHN_VERIFIER=;HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0;' },
+				body: 'Request is invalid',
+			};
 		}
-		await env.AUTHN_SESSIONS_KV.delete(decryptedCookie[4]);
+
+		const operation = await env.DATA_SERVICE.createDb(form, cookies, lang);
+		const result = await JSON.parse(operation);
+		const encryptedCookie = await env.CRYPTO_SERVICE.encryptPayload(result.body);
+
+		ctx.waitUntil(async () => {
+			env.CRYPTO_SALT_KV.delete(decryptedCookie.saltId);
+			env.AUTHN_SESSIONS_KV.delete(cookieState);
+		});
 
 		return {
+			status: result.status,
+			headers: [
+				['Set-Cookie', 'AUTHN_VERIFIER=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0;'],
+				[('Set-Cookie', `AUTHORIZATION=${encryptedCookie}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0;`)],
+			],
 			body: null,
-			init: {
-				status: 400,
-				headers: {
-					'Set-Cookie': 'AUTHN_VERIFIER=""; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0;',
-				},
-			},
 		};
 	} catch (err) {
 		console.error('[AUTHN] Callback error:', err);

@@ -1,41 +1,13 @@
 import { sendEmail } from './utilities/mail-client.js';
-import { getEncryptedCookie } from './utilities/getCookies.js';
 
-export async function handleSignUpInitialization(request, env, ctx, lang, cookies) {
+export async function handleSignUpInitialization(env, ctx, lang, form) {
 	try {
-		const [form, verifier, code, turnstileSecret] = await Promise.all([
-			request.json(),
-			env.AUTHN_VERIFIER.get(),
-			getEightDigits(),
-			env.TURNSTILE_SECRET.get(),
-		]);
-
-		if (!form.turnstileToken || !turnstileSecret) {
-			return new Response('Bad Request', { status: 400 });
-		}
-
-		const params = new URLSearchParams();
-		params.append('secret', turnstileSecret);
-		params.append('response', form.turnstileToken);
-
-		const cfRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/x-www-form-urlencoded',
-			},
-			body: params,
+		const code = new Promise((resolve) => {
+			const digits = env.CRYPTO_SERVICE.getEightDigits();
+			resolve(digits);
 		});
-		const verification = await cfRes.json();
 
-		if (!verification)
-			return new Response(null, {
-				status: 400,
-				headers: {
-					'Set-Cookie': 'AUTHN_VERIFIER=""; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0;',
-				},
-			});
-
-		const [res, date, nonce] = await Promise.all([
+		const [res, state, PKCE, vorte_server_secret] = await Promise.all([
 			sendEmail(
 				env,
 				[form.email],
@@ -55,7 +27,7 @@ Jos et yrittänyt luoda tiliä, voit jättää viestin huomiotta.
 
 Vahvistathan, että kyseessä on todella sinä – kertakäyttökoodi on voimassa 5 minuuttia.
 
-Kertakäyttökoodisi: ${code}
+Kertakäyttökoodisi: ${await code}
 
 Parhain terveisin
 Vorten tiimi
@@ -69,7 +41,7 @@ Om du inte försökte skapa ett konto kan du bara ignorera detta meddelande.
 
 Bekräfta att det verkligen är du – engångskoden är giltig i 5 minuter.
 
-Din engångskod: ${code}
+Din engångskod: ${await code}
 
 Vänliga hälsningar
 Vorte-teamet
@@ -83,7 +55,7 @@ If you did not try to create an account, you can safely ignore this message.
 
 Please confirm it was really you – the one-time code is valid for 5 minutes.
 
-Your one-time code: ${code}
+Your one-time code: ${await code}
 
 Best regards
 The Vorte team
@@ -94,24 +66,33 @@ The Vorte team
 				false,
 				false
 			),
-			Date.now(),
-			getNonce(),
-		]);
-		const [kvRes, encryptedCookie] = await Promise.all([
-			env.AUTHN_SESSIONS_KV.put(nonce, code, { expirationTtl: 300 }),
-			getEncryptedCookie('AUTHN_VERIFIER', `${form.email};${code};${verifier};${date};${nonce}`, env, 300),
+			env.CRYPTO_SERVICE.getCryptographicState(),
+			env.CRYPTO_SERVICE.getProofKeyForCodeExchange(),
+			env.VORTE_SERVER_SECRET.get(),
 		]);
 
-		return new Response(null, {
+		//`${method};${provider};${subject};${state};${PKCE.verifier};${date};${vorte_server_secret}`
+		const encryptedCookie = await env.CRYPTO_SERVICE.encryptPayload(
+			`otc;email;${form.email};${state};${PKCE.verifier};${Date.now()};${vorte_server_secret}`
+		);
+
+		ctx.waitUntil(env.AUTHN_SESSIONS_KV.put(state, `${PKCE.challenge};${await code}`, { expirationTtl: 300 }));
+
+		return {
 			status: 202,
 			headers: {
-				'Set-Cookie': encryptedCookie,
+				'Set-Cookie': `AUTHN_VERIFIER=${encryptedCookie}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=300;`,
 			},
-		});
+			body: null,
+		};
 	} catch (err) {
 		console.error('initializeAuth error:', err);
-		return new Response(null, {
-			status: 404,
-		});
+		return {
+			status: 400,
+			headers: {
+				'Set-Cookie': `AUTHN_VERIFIER=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0;`,
+			},
+			body: JSON.stringify(err),
+		};
 	}
 }
