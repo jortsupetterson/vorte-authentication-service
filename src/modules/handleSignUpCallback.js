@@ -32,8 +32,7 @@ export async function handleSignUpCallback(env, ctx, lang, cookies, message) {
 			};
 		}
 
-		const operation = await env.DATA_SERVICE.createDb(message.form, cookies, lang);
-		const result = await JSON.parse(operation);
+		const result = await env.DATA_SERVICE.createDb(message.form, cookies, lang);
 		const encryptedCookie = await env.CRYPTO_SERVICE.encryptPayload(result.body);
 
 		ctx.waitUntil(async () => {
