@@ -1,4 +1,4 @@
-export async function handleSignUpCallback(env, ctx, lang, cookies, form) {
+export async function handleSignUpCallback(env, ctx, lang, cookies, message) {
 	try {
 		const [decryptedCookie, vorte_server_secret] = await Promise.all([
 			env.CRYPTO_SERVICE.decryptPayload(cookies.AUTHN_VERIFIER),
@@ -18,7 +18,7 @@ export async function handleSignUpCallback(env, ctx, lang, cookies, form) {
 		const notExpired = Date.now() - ts <= 300_000;
 		const serverOk = parts[6] === vorte_server_secret;
 		const validPkce = await env.CRYPTO_SERVICE.verifyProofKeyForCodeExchange(pkceChallenge, pkceVerifier);
-		const validCode = form.code === kvSplit[1];
+		const validCode = message.code === kvSplit[1];
 
 		if (!notExpired || !serverOk || !validPkce || !validCode) {
 			ctx.waitUntil(async () => {
@@ -32,7 +32,7 @@ export async function handleSignUpCallback(env, ctx, lang, cookies, form) {
 			};
 		}
 
-		const operation = await env.DATA_SERVICE.createDb(form, cookies, lang);
+		const operation = await env.DATA_SERVICE.createDb(message.form, cookies, lang);
 		const result = await JSON.parse(operation);
 		const encryptedCookie = await env.CRYPTO_SERVICE.encryptPayload(result.body);
 
@@ -45,12 +45,15 @@ export async function handleSignUpCallback(env, ctx, lang, cookies, form) {
 			status: result.status,
 			headers: [
 				['Set-Cookie', 'AUTHN_VERIFIER=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0;'],
-				[('Set-Cookie', `AUTHORIZATION=${encryptedCookie}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0;`)],
+				[('Set-Cookie', `AUTHORIZATION=${encryptedCookie}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400;`)],
 			],
 			body: null,
 		};
 	} catch (err) {
-		console.error('[AUTHN] Callback error:', err);
-		throw new Error(err);
+		return {
+			status: 400,
+			headers: [['Set-Cookie', 'AUTHN_VERIFIER=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0;']],
+			body: JSON.stringify(err),
+		};
 	}
 }
