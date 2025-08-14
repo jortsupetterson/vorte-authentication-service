@@ -1,8 +1,17 @@
-function b64urlToBytes(s) {
-	s = s.replace(/-/g, '+').replace(/_/g, '/');
-	if (s.length % 4) s += '='.repeat(4 - (s.length % 4));
-	return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-}
+import { deriveUserIdAlias } from '../../utilities/deriveUserIdAlias.js';
+import { verifyIdToken } from '../../utilities/verifyJWKidToken.js';
+
+const PROVIDER_POLICY = {
+	google: (claims) => ({
+		ok: claims.email_verified === true && typeof claims.email === 'string' /* && claims.hd === 'vorte.app' */,
+		email: claims.email || null,
+	}),
+	microsoft: (claims, tid) => ({
+		ok: claims.tid === tid && typeof claims.email === 'string',
+		email: claims.email || null,
+	}),
+	// apple myöhemmin -> ok:false (tai relay-case handling)
+};
 
 const CLIENT_IDS = {
 	google: async (env) => await env.GOOGLE_CLIENT_ID.get(),
@@ -43,7 +52,7 @@ export async function handleSocialCallback(env, ctx, lang, cookies, segments, co
 		ctx.waitUntil(env.CRYPTO_SALT_KV.delete(decryptedCookie.saltId));
 		return {
 			status: 400,
-			headers: { 'Set-Cookie': 'AUTHN_VERIFIER=;HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0;' },
+			headers: { 'Set-Cookie': 'AUTHN_VERIFIER=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0;' },
 			body: 'Request is invalid',
 		};
 	}
@@ -54,7 +63,7 @@ export async function handleSocialCallback(env, ctx, lang, cookies, segments, co
 		ctx.waitUntil(env.CRYPTO_SALT_KV.delete(decryptedCookie.saltId));
 		return {
 			status: 400,
-			headers: { 'Set-Cookie': 'AUTHN_VERIFIER=;HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0;' },
+			headers: { 'Set-Cookie': 'AUTHN_VERIFIER=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0;' },
 			body: 'Unsupported provider',
 		};
 	}
@@ -77,12 +86,11 @@ export async function handleSocialCallback(env, ctx, lang, cookies, segments, co
 		body: params,
 	});
 
-	ctx.waitUntil(env.CRYPTO_SALT_KV.delete(decryptedCookie.saltId));
-
 	if (!tokenRes.ok) {
 		const msg = await tokenRes.text();
+		ctx.waitUntil(env.CRYPTO_SALT_KV.delete(decryptedCookie.saltId));
 		return {
-			status: 502,
+			status: 400,
 			headers: { 'Set-Cookie': 'AUTHN_VERIFIER=;HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0;' },
 			body: `Token exchange failed: ${msg}, status502`,
 		};
@@ -90,15 +98,62 @@ export async function handleSocialCallback(env, ctx, lang, cookies, segments, co
 
 	const token = await tokenRes.json();
 
-	const [hdrB64, payloadB64] = token.id_token.split('.');
-	const payload = JSON.parse(new TextDecoder().decode(b64urlToBytes(payloadB64)));
+	const claims = await verifyIdToken(token.id_token, client_id, provider);
 
+	const { ok, email } =
+		provider === 'microsoft' ? PROVIDER_POLICY.microsoft(claims, await env.AZURE_TENANT_ID.get()) : PROVIDER_POLICY.google(claims);
+
+	if (!ok || !email) {
+		ctx.waitUntil(env.CRYPTO_SALT_KV.delete(decryptedCookie.saltId));
+		return {
+			status: 400,
+			headers: { 'Set-Cookie': 'AUTHN_VERIFIER=;HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0;' },
+			body: `Not valid email`,
+		};
+	}
+
+	const emailAlias = await deriveUserIdAlias('email', email, await env.ALIAS_SECRET.get());
+
+	let user_id = '';
+	const kvHit = await env.AUTHN_KV.get(emailAlias);
+	if (kvHit) user_id = kvHit;
+	const row = await env.AUTHN_D1.prepare(
+		`
+			SELECT user_id FROM identifiers
+			WHERE alias = ?
+			`
+	)
+		.bind(emailAlias)
+		.first();
+	if (row && row.user_id) user_id = row.user_id;
+
+	if (!user_id) {
+		ctx.waitUntil(env.CRYPTO_SALT_KV.delete(decryptedCookie.saltId));
+		return {
+			status: 400,
+			headers: { 'Set-Cookie': 'AUTHN_VERIFIER=;HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0;' },
+			body: `Alias does not exist, ${emailAlias}, ${kvHit}, ${row}`,
+		};
+	}
+
+	const encryptedCookie = await env.CRYPTO_SERVICE.encryptPayload(`${user_id};${vorte_server_secret}`);
+
+	ctx.waitUntil(
+		Promise.all([
+			env.CRYPTO_SALT_KV.delete(decryptedCookie.saltId),
+			env.AUTHN_KV.put(user_id, '1'),
+			env.AUTHN_KV.put(emailAlias, user_id, { expirationTtl: 2_592_000 }),
+		])
+	);
 	return {
-		status: tokenRes.status,
-		headers: {
-			'Content-Type': 'application/json',
-			'Set-Cookie': 'AUTHN_VERIFIER=;HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0;',
-		},
-		body: JSON.stringify(JSON.stringify(payload)),
+		status: 302,
+		headers: [
+			['Content-Type', 'application/json'],
+			['Location', env.SIGN_IN_REDIRECT_BASE],
+			['Set-Cookie', 'AUTHN_VERIFIER=; Path=/; SameSite=lax; HttpOnly; Secure;  Max-Age=0;'],
+			['Set-Cookie', `HAS_ACCOUNT=true; Path=/; SameSite=lax; HttpOnly Secure; Max-Age=315360000;`],
+			['Set-Cookie', `AUTHORIZATION=${encryptedCookie}; Path=/; SameSite=Lax; HttpOnly; Secure;  Max-Age=86400;`],
+		],
+		body: null,
 	};
 }

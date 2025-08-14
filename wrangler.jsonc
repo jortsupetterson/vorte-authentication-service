@@ -2,7 +2,7 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"account_id": "e8ef5da3c57b544081f2e4181d6cecc9",
 	"name": "authentication-service-v0",
-	"main": "src/index.js",
+	"main": "dist/index.js",
 	"compatibility_date": "2025-08-05",
 	"observability": {
 		"enabled": true
@@ -10,10 +10,11 @@
 
 	"placement": { "mode": "smart" },
 
-	"minify": false,
+	"minify": true,
 
 	"vars": {
-		"SOCIAL_AUTHN_REDIRECT_URI": "https://localhost:8787/services/authn/sign_in/callback/social"
+		"SOCIAL_AUTHN_REDIRECT_URI": "https://localhost:8787/services/authn/sign_in/callback/social",
+		"SIGN_IN_REDIRECT_BASE": "https://localhost:8787/dash"
 	},
 
 	"secrets_store_secrets": [
@@ -46,6 +47,11 @@
 			"binding": "AZURE_CLIENT_ID",
 			"secret_name": "azure-client-id",
 			"store_id": "44ad49dd09074b15a7db7007f7de65f6"
+		},
+		{
+			"binding": "AZURE_TENANT_ID",
+			"secret_name": "azure-tenant-id",
+			"store_id": "44ad49dd09074b15a7db7007f7de65f6"
 		}
 	],
 	"kv_namespaces": [
@@ -55,7 +61,7 @@
 			"preview_id": "df4fbf6456aa41c7b39b27412968f134"
 		},
 		{
-			"binding": "USER_IDENTIFIERS_KV",
+			"binding": "AUTHN_KV",
 			"id": "16b7f10d0c794ddcb0793305f80107df",
 			"preview_id": "3c74d70e263b4de9a7c97399266a66f3"
 		},
@@ -63,6 +69,13 @@
 			"binding": "CRYPTO_SALT_KV",
 			"id": "a18e89285f8946c89a1ff9764fef53c0",
 			"preview_id": "1bbd385e0fbd46e19d9b0191fbae953b"
+		}
+	],
+	"d1_databases": [
+		{
+			"binding": "AUTHN_D1",
+			"database_id": "6ab5fb72-4fd7-45df-a8e3-c83407ca9e4f",
+			"preview_database_id": "9c43b0f2-7673-45b6-847b-a0bb408cd6ff"
 		}
 	],
 	"services": [

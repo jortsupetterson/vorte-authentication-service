@@ -25,34 +25,33 @@ export async function handleSignUpCallback(env, ctx, lang, cookies, message) {
 				env.CRYPTO_SALT_KV.delete(decryptedCookie.saltId);
 				env.AUTHN_SESSIONS_KV.delete(cookieState);
 			});
-			return {
-				status: 400,
-				headers: { 'Set-Cookie': 'AUTHN_VERIFIER=;HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0;' },
-				body: 'Request is invalid',
-			};
+			throw new Error(`Invalid request, ${[kvRaw, kvSplit, pkceChallenge]}`);
 		}
 
 		const result = await env.DATA_SERVICE.createDb(message.form, cookies, lang);
-		const encryptedCookie = await env.CRYPTO_SERVICE.encryptPayload(result.body);
+		const encryptedCookie = await env.CRYPTO_SERVICE.encryptPayload(`${result.body};${vorte_server_secret}`);
 
 		ctx.waitUntil(async () => {
 			env.CRYPTO_SALT_KV.delete(decryptedCookie.saltId);
 			env.AUTHN_SESSIONS_KV.delete(cookieState);
+			env.AUTHN_KV.put(result.body, '1');
 		});
 
 		return {
 			status: result.status,
 			headers: [
 				['Set-Cookie', 'AUTHN_VERIFIER=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0;'],
-				[('Set-Cookie', `AUTHORIZATION=${encryptedCookie}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400;`)],
+				['Set-Cookie', `AUTHORIZATION=${encryptedCookie}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400;`],
 			],
 			body: null,
 		};
 	} catch (err) {
 		return {
 			status: 400,
-			headers: [['Set-Cookie', 'AUTHN_VERIFIER=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0;']],
-			body: JSON.stringify(err),
+			headers: {
+				'Set-Cookie': 'AUTHN_VERIFIER=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0;',
+			},
+			body: err,
 		};
 	}
 }
